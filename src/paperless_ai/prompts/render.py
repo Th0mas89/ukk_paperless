@@ -14,6 +14,7 @@ class PromptName(enum.Enum):
     TAXONOMY_BLOCK = "taxonomy_block"
     CHAT_QA = "chat_qa"
     CHAT_REFINE = "chat_refine"
+    OCR_CLEANUP = "ocr_cleanup"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

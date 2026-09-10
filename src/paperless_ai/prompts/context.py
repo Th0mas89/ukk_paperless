@@ -44,3 +44,9 @@ class ChatQaPromptContext(PromptContext):
 class ChatRefinePromptContext(PromptContext):
     template_name: ClassVar[PromptName] = PromptName.CHAT_REFINE
     output_language: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class OcrCleanupPromptContext(PromptContext):
+    template_name: ClassVar[PromptName] = PromptName.OCR_CLEANUP
+    content: str

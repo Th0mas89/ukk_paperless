@@ -32,6 +32,7 @@ from documents.permissions import set_permissions_for_object
 from documents.plugins.helpers import DocumentsStatusManager
 from documents.tasks import bulk_update_documents
 from documents.tasks import consume_file
+from documents.tasks import polish_document_content
 from documents.tasks import remove_document_from_index
 from documents.tasks import update_document_content_maybe_archive_file
 from documents.versioning import get_latest_version_for_root
@@ -416,6 +417,24 @@ def reprocess(doc_ids: list[int], *, remote_ocr: bool = False) -> Literal["OK"]:
         )
 
     return "OK"
+
+
+def polish_content(doc_ids: list[int]) -> list[str]:
+    """
+    Queue an LLM-based OCR text cleanup for the given documents.
+
+    Unlike the other bulk actions, this returns the dispatched task IDs
+    (instead of "OK") so callers can poll for completion.
+    """
+    task_ids = []
+    for document_id in doc_ids:
+        async_task = polish_document_content.apply_async(
+            kwargs={"document_id": document_id},
+            headers={"trigger_source": PaperlessTask.TriggerSource.MANUAL},
+        )
+        task_ids.append(async_task.id)
+
+    return task_ids
 
 
 def set_permissions(

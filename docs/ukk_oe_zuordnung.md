@@ -38,7 +38,7 @@ gleichnamigen Django-Gruppe werden.
 ```bash
 docker compose exec webserver python manage.py shell -c "
 from django.contrib.auth.models import User, Group
-u = User.objects.get(username='osterholt')
+u = User.objects.get(username='Thomas.Osterholt@uk-koeln.de')
 g, _ = Group.objects.get_or_create(name='Station A')
 u.groups.add(g)
 "

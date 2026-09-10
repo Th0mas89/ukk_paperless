@@ -74,14 +74,18 @@
 							<div class="ukk-status-success" hidden>
 								<label class="form-label">Erkannter Text</label>
 								<textarea class="ukk-content form-control mb-3" rows="12" readonly></textarea>
-								<div class="d-flex gap-2">
+								<div class="d-flex gap-2 flex-wrap">
 									<button type="button" class="btn btn-outline-primary ukk-copy-btn">
 										Text kopieren
+									</button>
+									<button type="button" class="btn btn-outline-secondary ukk-polish-btn">
+										Text glätten (KI)
 									</button>
 									<button type="button" class="btn btn-primary ukk-kis-btn">
 										An KIS senden
 									</button>
 								</div>
+								<div class="ukk-polish-error text-danger small mt-2" hidden></div>
 							</div>
 
 						</div>
@@ -99,14 +103,46 @@
 			card.querySelector('.ukk-status-success').hidden = state !== 'success';
 		}
 
+		function ukkGetCookie(name) {
+			var match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+			return match ? decodeURIComponent(match[2]) : '';
+		}
+
+		// Polls /api/tasks/ every 2s until the task reaches a terminal state,
+		// then calls onDone(task) once. Shared by the OCR wait and the
+		// "Text glätten"-Aktion below.
+		function ukkPollUntilDone(taskId, onDone) {
+			var timer = null;
+			function check() {
+				fetch('/api/tasks/?task_id=' + encodeURIComponent(taskId), {credentials: 'same-origin'})
+					.then(function (response) { return response.json(); })
+					.then(function (data) {
+						var results = data.results || data;
+						var task = results && results[0];
+						if (!task) {
+							return;
+						}
+						if (task.status === 'pending' || task.status === 'started') {
+							return;
+						}
+						clearInterval(timer);
+						onDone(task);
+					});
+			}
+			check();
+			timer = setInterval(check, 2000);
+		}
+
 		function ukkInitCard(card) {
 			var taskId = card.dataset.taskId;
 			var contentValue = '';
-			var pollTimer = null;
 
 			var copyBtn = card.querySelector('.ukk-copy-btn');
 			var kisBtn = card.querySelector('.ukk-kis-btn');
+			var polishBtn = card.querySelector('.ukk-polish-btn');
+			var polishError = card.querySelector('.ukk-polish-error');
 			var textarea = card.querySelector('.ukk-content');
+			var polishBtnDefaultLabel = polishBtn.textContent;
 
 			copyBtn.addEventListener('click', function () {
 				navigator.clipboard.writeText(contentValue).then(function () {
@@ -128,45 +164,79 @@
 				fetch('/api/documents/' + documentId + '/', {credentials: 'same-origin'})
 					.then(function (response) { return response.json(); })
 					.then(function (doc) {
+						card.dataset.documentId = documentId;
 						contentValue = doc.content || '';
 						textarea.value = contentValue;
 						ukkSetState(card, 'success');
 					});
 			}
 
-			function pollTask() {
-				fetch('/api/tasks/?task_id=' + encodeURIComponent(taskId), {credentials: 'same-origin'})
-					.then(function (response) { return response.json(); })
+			polishBtn.addEventListener('click', function () {
+				var documentId = card.dataset.documentId;
+				if (!documentId) {
+					return;
+				}
+				polishBtn.disabled = true;
+				polishBtn.textContent = 'Wird geglättet …';
+				polishError.hidden = true;
+
+				fetch('/api/documents/polish_content/', {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRFToken': ukkGetCookie('csrftoken'),
+					},
+					body: JSON.stringify({documents: [parseInt(documentId, 10)]}),
+				})
+					.then(function (response) {
+						if (!response.ok) {
+							return response.text().then(function (text) {
+								throw new Error(text || ('HTTP ' + response.status));
+							});
+						}
+						return response.json();
+					})
 					.then(function (data) {
-						var results = data.results || data;
-						var task = results && results[0];
-						if (!task) {
-							return;
+						var polishTaskId = data.result && data.result[0];
+						if (!polishTaskId) {
+							throw new Error('Keine Task-ID erhalten.');
 						}
-						if (task.status === 'pending' || task.status === 'started') {
-							ukkSetState(card, 'pending');
-							return;
-						}
-						clearInterval(pollTimer);
-						if (task.status === 'success') {
-							var docId = task.related_document_ids && task.related_document_ids[0];
-							if (docId) {
-								fetchDocumentContent(docId);
+						ukkPollUntilDone(polishTaskId, function (task) {
+							polishBtn.disabled = false;
+							polishBtn.textContent = polishBtnDefaultLabel;
+							if (task.status === 'success') {
+								fetchDocumentContent(documentId);
 							} else {
-								card.querySelector('.ukk-failure-reason').textContent = 'Kein Dokument aus dieser Verarbeitung hervorgegangen.';
-								ukkSetState(card, 'failure');
+								polishError.textContent = (task.result_data && task.result_data.error_message) || 'Unbekannter Fehler.';
+								polishError.hidden = false;
 							}
-						} else {
-							var reason = task.result_data && task.result_data.error_message;
-							card.querySelector('.ukk-failure-reason').textContent = reason || '';
-							ukkSetState(card, 'failure');
-						}
+						});
+					})
+					.catch(function (error) {
+						polishBtn.disabled = false;
+						polishBtn.textContent = polishBtnDefaultLabel;
+						polishError.textContent = error.message;
+						polishError.hidden = false;
 					});
-			}
+			});
 
 			ukkSetState(card, 'pending');
-			pollTask();
-			pollTimer = setInterval(pollTask, 2000);
+			ukkPollUntilDone(taskId, function (task) {
+				if (task.status === 'success') {
+					var docId = task.related_document_ids && task.related_document_ids[0];
+					if (docId) {
+						fetchDocumentContent(docId);
+					} else {
+						card.querySelector('.ukk-failure-reason').textContent = 'Kein Dokument aus dieser Verarbeitung hervorgegangen.';
+						ukkSetState(card, 'failure');
+					}
+				} else {
+					var reason = task.result_data && task.result_data.error_message;
+					card.querySelector('.ukk-failure-reason').textContent = reason || '';
+					ukkSetState(card, 'failure');
+				}
+			});
 		}
 
 		document.querySelectorAll('.ukk-doc-card').forEach(ukkInitCard);

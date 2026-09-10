@@ -756,6 +756,64 @@ def apply_ai_suggestions(self, action_id: int, document_id: int) -> None:
         update_document_in_llm_index.apply_async(kwargs={"document": document})
 
 
+@shared_task(
+    bind=True,
+    autoretry_for=(LLMTimeoutError,),
+    max_retries=3,
+    retry_backoff=60,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def polish_document_content(self, document_id: int) -> None:
+    """
+    Runs a document's OCR text through the configured LLM to fix recognition
+    errors, overwriting Document.content with the result.
+    """
+    from paperless_ai.ocr_cleanup import get_ai_ocr_cleanup
+
+    try:
+        document = Document.objects.get(pk=document_id)
+    except Document.DoesNotExist:
+        logger.warning(
+            "Document %d no longer exists, not polishing content",
+            document_id,
+        )
+        return
+
+    ai_config = AIConfig()
+    if not ai_config.ai_enabled:
+        logger.warning(
+            "AI is not enabled, not polishing content for document %d",
+            document_id,
+        )
+        return
+
+    new_content = get_ai_ocr_cleanup(document)
+
+    with transaction.atomic():
+        old_document = Document.objects.get(pk=document.pk)
+        Document.objects.filter(pk=document.pk).update(content=new_content)
+
+        if settings.AUDIT_LOG_ENABLED:
+            LogEntry.objects.log_create(
+                instance=old_document,
+                changes={"content": [old_document.content, new_content]},
+                additional_data={"reason": "AI OCR text cleanup (Ollama)"},
+                action=LogEntry.Action.UPDATE,
+            )
+
+    document.refresh_from_db()
+
+    from documents.search import get_backend
+
+    get_backend().add_or_update(document)
+
+    if ai_config.llm_index_enabled:
+        llm_index_add_or_update_document(document)
+
+    clear_document_caches(document.pk)
+
+
 @shared_task
 def update_document_in_llm_index(document) -> None:
     llm_index_add_or_update_document(document)

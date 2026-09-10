@@ -203,6 +203,7 @@ from documents.serialisers import EmailSerializer
 from documents.serialisers import MergeDocumentsAsVersionsSerializer
 from documents.serialisers import MergeDocumentsSerializer
 from documents.serialisers import NotesSerializer
+from documents.serialisers import PolishDocumentContentSerializer
 from documents.serialisers import PostDocumentSerializer
 from documents.serialisers import RemovePasswordDocumentsSerializer
 from documents.serialisers import ReprocessDocumentsSerializer
@@ -3310,6 +3311,21 @@ class ReprocessDocumentsView(DocumentOperationPermissionMixin):
             method=bulk_edit.reprocess,
             validated_data=serializer.validated_data,
             operation_label="document reprocess",
+        )
+
+
+class PolishDocumentContentView(DocumentOperationPermissionMixin):
+    serializer_class = PolishDocumentContentSerializer
+
+    def post(self, request, *args, **kwargs):
+        if not AIConfig().ai_enabled:
+            return HttpResponseBadRequest("AI is required for this feature")
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return self._execute_document_action(
+            method=bulk_edit.polish_content,
+            validated_data=serializer.validated_data,
+            operation_label="document content polish",
         )
 
 

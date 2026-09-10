@@ -790,6 +790,7 @@ class PaperlessTask(ModelWithOwner):
         BUILD_SHARE_LINK = "build_share_link", _("Build Share Link")
         BULK_DELETE = "bulk_delete", _("Bulk Delete")
         APPLY_AI_SUGGESTIONS = "apply_ai_suggestions", _("Apply AI Suggestions")
+        POLISH_CONTENT = "polish_content", _("Polish Content (AI)")
 
     COMPLETE_STATUSES = (
         Status.SUCCESS,

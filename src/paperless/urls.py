@@ -30,6 +30,7 @@ from documents.views import IndexView
 from documents.views import LogViewSet
 from documents.views import MergeDocumentsAsVersionsView
 from documents.views import MergeDocumentsView
+from documents.views import PolishDocumentContentView
 from documents.views import PostDocumentView
 from documents.views import RemoteVersionView
 from documents.views import RemovePasswordDocumentsView
@@ -163,6 +164,11 @@ urlpatterns = [
                                 "^reprocess/",
                                 ReprocessDocumentsView.as_view(),
                                 name="reprocess_documents",
+                            ),
+                            re_path(
+                                "^polish_content/",
+                                PolishDocumentContentView.as_view(),
+                                name="polish_document_content",
                             ),
                             re_path(
                                 "^rotate/",
@@ -300,7 +306,7 @@ urlpatterns = [
     re_path(r"^favicon.ico$", FaviconView.as_view(), name="favicon"),
     re_path(
         r"^dokument/verarbeitung/(?P<task_ids>[0-9a-fA-F,-]+)/$",
-        login_required(DocumentProcessingView.as_view()),
+        login_required(ensure_csrf_cookie(DocumentProcessingView.as_view())),
         name="document_processing",
     ),
     re_path(r"admin/", admin.site.urls),

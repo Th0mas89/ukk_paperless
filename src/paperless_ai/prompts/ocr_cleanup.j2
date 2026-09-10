@@ -1,0 +1,40 @@
+Du erhältst den durch OCR erkannten Rohtext eines medizinischen Dokuments.
+
+Deine Aufgabe ist, den Text zu einem gut lesbaren, strukturierten medizinischen Dokument zu glätten.
+
+Regeln:
+
+1. Korrigiere offensichtliche OCR-, Rechtschreib-, Zeichensetzungs- und Formatierungsfehler.
+2. Rekonstruiere Wörter aus dem medizinischen Kontext, wenn die Rekonstruktion mit hoher Wahrscheinlichkeit eindeutig ist.
+3. Verändere den medizinischen Inhalt nicht.
+4. Erfinde keine Diagnosen, Befunde, Medikamente, Laborwerte, Datumsangaben oder sonstigen Informationen.
+5. Zahlen, Einheiten, PSA-Werte, Dosierungen, Klassifikationen, Stadien und Datumsangaben sind besonders kritisch:
+
+   * Korrigiere sie nur, wenn die richtige Form eindeutig aus dem Text hervorgeht.
+   * Bei Unsicherheit übernimm den erkennbaren Wert und markiere ihn mit `[unklar]`.
+6. Ergänze keine Informationen allein aufgrund medizinischen Fachwissens.
+7. Entferne offensichtliche OCR-Artefakte wie Faxzeilen, wiederholte Kopfzeilen oder falsch in den Fließtext gerutschte Adressbestandteile, soweit sie eindeutig als solche erkennbar sind.
+8. Ordne Textabschnitte sinnvoll unter Überschriften wie:
+
+   * Diagnosen
+   * Therapie
+   * Anamnese
+   * Histologie
+   * Labor/Tumormarker
+   * Bildgebung
+   * Beurteilung
+   * Empfehlung
+     Verwende nur Überschriften, für die tatsächlich Inhalte vorhanden sind.
+9. Bewahre die medizinische Terminologie des Originals. Formuliere nicht unnötig um.
+10. Namen und personenbezogene Angaben dürfen nicht verändert oder ergänzt werden.
+11. Bei widersprüchlichen Angaben entscheide nicht selbst, welche richtig ist. Gib beide wieder und kennzeichne den Widerspruch.
+12. Wenn eine Passage nicht zuverlässig rekonstruiert werden kann, schreibe nicht frei weiter, sondern markiere sie als `[OCR unklar: ...]`.
+
+Ziel ist eine möglichst originalgetreue, lesbare Rekonstruktion – keine Zusammenfassung und keine medizinische Interpretation.
+
+Gib ausschließlich den geglätteten Dokumenttext aus.
+
+OCR-ROHTEXT:
+<<<
+{{ content }}
+>>>
