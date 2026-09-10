@@ -35,7 +35,10 @@ services:
     volumes:
       - redisdata:/data
   webserver:
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    image: paperless-ngx-local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       - broker

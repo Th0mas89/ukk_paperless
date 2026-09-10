@@ -1,76 +1,303 @@
+
 <!doctype html>
 
 {% load static i18n %}
 
-<html lang="en" data-bs-theme="auto">
+<html lang="de" data-bs-theme="auto">
 <head>
 	<meta charset="utf-8">
-	<title>Paperless-ngx</title>
+	<title>UKK Paperless - Patientenübersicht</title>
 	<base href="{% url 'base' %}">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="cookie_prefix" content="{{cookie_prefix}}">
 	<meta name="robots" content="noindex,nofollow">
-	<meta name="author" content="The Paperless-ngx Team">
 	<link rel="icon" type="image/x-icon" href="favicon.ico">
-	<link rel="manifest" href="{% static webmanifest %}">
-	<link rel="stylesheet" href="{% static styles_css %}">
-	<link rel="apple-touch-icon" href="{% static apple_touch_icon %}">
+	<link rel="stylesheet" href="{% static 'bootstrap.min.css' %}">
+	<style>
+		body {
+			background-color: #f8f9fa;
+			min-height: 100vh;
+		}
+		.navbar-ukk {
+			background-color: #004b87;
+		}
+		.card-header-ukk {
+			background-color: #e9ecef;
+			font-weight: 600;
+		}
+		.patient-card {
+			box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+		}
+		.modal-backdrop-ukk {
+			position: fixed;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.5);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			z-index: 1050;
+		}
+		.modal-backdrop-ukk[hidden] {
+			display: none;
+		}
+		.modal-dialog-ukk {
+			background: #fff;
+			border-radius: 0.5rem;
+			width: 100%;
+			max-width: 480px;
+			margin: 1rem;
+			box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.2);
+		}
+	</style>
 </head>
 <body>
-	<pngx-root>
-		<script type="text/javascript">
-			setTimeout(() => {
-				let warning = document.getElementsByClassName('warning').item(0)
-				if (warning) {
-					warning.classList.remove('hide')
-					warning.classList.add('show')
-				}
-			}, 8000)
-		</script>
-		<style type="text/css">
-			html, body {
-				width: 100%;
-				height: 100%;
-			}
-
-			@keyframes pulsate {
-				0% {
-					opacity: 0.1;
-				}
-				50% {
-					opacity: 0.3;
-				}
-				100% {
-					opacity: 0.1;
-				}
-			}
-
-			.app-loader svg, .app-loader h6 {
-				opacity: 0.1;
-				animation: pulsate 2s ease-out;
-				animation-iteration-count: infinite;
-			}
-
-			svg.logo .leaf {
-				fill: var(--bs-body-color) !important;
-			}
-		</style>
-		<div class="bg-light w-100 h-100 d-flex align-items-center">
-			<div class="app-loader align-self-center text-center mx-auto">
-				{% include "paperless-ngx/snippets/svg_logo.html" with extra_attrs="class='logo mb-2' height='6em'" %}
-				<h6 class="m-auto">{% translate "Paperless-ngx is loading..." %}</h6>
-				<p class="warning m-auto mt-3 small fade hide">{% translate "Still here?! Hmm, something might be wrong." %} <a href="https://docs.paperless-ngx.com">{% translate "Here's a link to the docs." %}</a></p>
+	<nav class="navbar navbar-dark navbar-ukk mb-4">
+		<div class="container-fluid">
+			<span class="navbar-brand mb-0 h1 d-flex align-items-center">
+				{% include "paperless-ngx/snippets/svg_leaf.html" with extra_attrs="width='24' class='me-2 fill-white'" %}
+				UKK Paperless &ndash; Stationsübersicht
+			</span>
+			<div class="d-flex align-items-center text-white">
+				<span class="me-3">
+					<strong>Angemeldet:</strong> {{ full_name }} ({{ username }})
+				</span>
+				{% if current_oe %}
+					<span class="badge bg-light text-dark fs-6 me-3">OE: {{ current_oe }}</span>
+				{% endif %}
+				<a href="{% url 'account_logout' %}" class="btn btn-outline-light btn-sm">Abmelden</a>
 			</div>
 		</div>
-		<script type="text/javascript">{# Pass Django messages to Angular frontend #}
-			window.DJANGO_MESSAGES = [
-				{% for message in messages %}
-					{ level: "{{ message.level_tag | escapejs }}", message: "{{ message | escapejs }}" },
-				{% endfor %}
-			]
-		</script>
-	</pngx-root>
-	<script src="{% static polyfills_js %}" type="module"></script>
-	<script src="{% static main_js %}" type="module"></script>
+	</nav>
+
+	<div class="container mb-5">
+		<!-- OE Filter / Information -->
+		<div class="row mb-4">
+			<div class="col-12">
+				<div class="card patient-card">
+					<div class="card-body d-flex justify-content-between align-items-center">
+						<div>
+							<h5 class="card-title mb-1">Organisationseinheit (OE)</h5>
+							<p class="text-muted mb-0">
+								{% if current_oe %}
+									Aktuell ausgewählte Organisationseinheit: <strong>{{ current_oe }}</strong>
+								{% else %}
+									<span class="text-warning">Keine Organisationseinheit zugeordnet</span> (Gruppen: {{ user_groups|join:", "|default:"keine" }})
+								{% endif %}
+							</p>
+						</div>
+						<form method="get" class="d-flex align-items-center gap-2">
+							<input type="text" name="oe" class="form-control form-control-sm" placeholder="OE filtern (z.B. Station A)" value="{{ request.GET.oe|default:'' }}">
+							<button type="submit" class="btn btn-primary btn-sm">Wechseln</button>
+							{% if request.GET.oe %}
+								<a href="{% url 'base' %}" class="btn btn-outline-secondary btn-sm">Zurücksetzen</a>
+							{% endif %}
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Patientenliste -->
+		<div class="row">
+			<div class="col-12">
+				<div class="card patient-card">
+					<div class="card-header card-header-ukk d-flex justify-content-between align-items-center">
+						<span>Patienten in Ihrer Organisationseinheit</span>
+						{% if patients %}
+							<span class="badge bg-primary">{{ patients|length }} Patient(en)</span>
+						{% endif %}
+					</div>
+					<div class="card-body">
+						{% if patients %}
+							<div class="table-responsive">
+								<table class="table table-hover align-middle mb-0">
+									<thead class="table-light">
+										<tr>
+											<th>PID</th>
+											<th>Nachname</th>
+											<th>Vorname</th>
+											<th>Geburtsdatum</th>
+											<th>Fallnummer(n)</th>
+											<th>Fallstart</th>
+											<th>Fallende</th>
+											<th>OE</th>
+											<th>Dokumente</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										{% for patient in patients %}
+											<tr>
+												<td><strong>{{ patient.pid }}</strong></td>
+												<td>{{ patient.last_name }}</td>
+												<td>{{ patient.first_name }}</td>
+												<td>{{ patient.date_of_birth|date:"d.m.Y" }}</td>
+												<td>
+													{% for case in patient.cases.all %}
+														<span class="badge bg-secondary me-1">{{ case.case_number }}</span>
+													{% empty %}
+														<span class="text-muted">-</span>
+													{% endfor %}
+												</td>
+												<td>
+													{% for case in patient.cases.all %}
+														<div>{{ case.case_start|date:"d.m.Y H:i" }}</div>
+													{% empty %}
+														-
+													{% endfor %}
+												</td>
+												<td>
+													{% for case in patient.cases.all %}
+														<div>{{ case.case_end|date:"d.m.Y H:i"|default:"laufend" }}</div>
+													{% empty %}
+														-
+													{% endfor %}
+												</td>
+												<td>
+													{% for case in patient.cases.all %}
+														<span class="badge bg-info text-dark">{{ case.organizational_unit }}</span>
+													{% empty %}
+														-
+													{% endfor %}
+												</td>
+												<td>
+													<span class="badge {% if patient.document_count %}bg-success{% else %}bg-secondary{% endif %}">{{ patient.document_count }}</span>
+												</td>
+												<td>
+													<button type="button" class="btn btn-primary btn-sm" onclick="ukkOpenUpload({{ patient.id }}, '{{ patient.last_name|escapejs }}, {{ patient.first_name|escapejs }} ({{ patient.pid|escapejs }})')">
+														Dokument hochladen
+													</button>
+												</td>
+											</tr>
+										{% endfor %}
+									</tbody>
+								</table>
+							</div>
+						{% else %}
+							<div class="alert alert-info text-center py-4 my-2" role="alert">
+								<h4 class="alert-heading mb-1">keine patienten da, ruhigen dienst</h4>
+								<p class="mb-0 text-muted">In der gewählten Organisationseinheit ({{ current_oe|default:"keine" }}) sind derzeit keine aktiven Patienten erfasst.</p>
+							</div>
+						{% endif %}
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- Upload-Modal -->
+	<div id="ukkUploadBackdrop" class="modal-backdrop-ukk" hidden>
+		<div class="modal-dialog-ukk">
+			<form id="ukkUploadForm" enctype="multipart/form-data">
+				{% csrf_token %}
+				<input type="hidden" name="patient" id="ukkUploadPatientId">
+				<input type="hidden" name="from_webui" value="true">
+				<div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+					<h5 class="mb-0">Dokument hochladen</h5>
+					<button type="button" class="btn-close" aria-label="Schließen" onclick="ukkCloseUpload()"></button>
+				</div>
+				<div id="ukkUploadFormBody">
+					<div class="p-3">
+						<p class="mb-2">Patient: <strong id="ukkUploadPatientLabel"></strong></p>
+						<div class="mb-3">
+							<label for="ukkUploadFile" class="form-label">Datei</label>
+							<input type="file" name="document" id="ukkUploadFile" class="form-control" required>
+						</div>
+						<div class="mb-3">
+							<label for="ukkUploadTitle" class="form-label">Titel (optional)</label>
+							<input type="text" name="title" id="ukkUploadTitle" class="form-control">
+						</div>
+						<div id="ukkUploadStatus" class="mb-0"></div>
+					</div>
+					<div class="p-3 border-top d-flex justify-content-end gap-2">
+						<button type="button" class="btn btn-outline-secondary" onclick="ukkCloseUpload()">Abbrechen</button>
+						<button type="submit" id="ukkUploadSubmit" class="btn btn-primary">Hochladen</button>
+					</div>
+				</div>
+				<div id="ukkUploadAskMore" class="p-3" hidden>
+					<p class="mb-3">Dokument wurde hochgeladen. Möchten Sie ein weiteres Dokument für <strong id="ukkAskMorePatientLabel"></strong> hochladen?</p>
+					<div class="d-flex justify-content-end gap-2">
+						<button type="button" class="btn btn-outline-secondary" onclick="ukkAskMoreNo()">Nein, weiter</button>
+						<button type="button" class="btn btn-primary" onclick="ukkAskMoreYes()">Ja, weiteres Dokument</button>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<script type="text/javascript">
+		var ukkCurrentPatientId = null;
+		var ukkUploadTaskIds = [];
+
+		function ukkOpenUpload(patientId, patientLabel) {
+			ukkCurrentPatientId = patientId;
+			ukkUploadTaskIds = [];
+			document.getElementById('ukkUploadForm').reset();
+			document.getElementById('ukkUploadPatientId').value = patientId;
+			document.getElementById('ukkUploadPatientLabel').textContent = patientLabel;
+			document.getElementById('ukkAskMorePatientLabel').textContent = patientLabel;
+			document.getElementById('ukkUploadStatus').innerHTML = '';
+			document.getElementById('ukkUploadFormBody').hidden = false;
+			document.getElementById('ukkUploadAskMore').hidden = true;
+			document.getElementById('ukkUploadBackdrop').hidden = false;
+		}
+
+		function ukkCloseUpload() {
+			document.getElementById('ukkUploadBackdrop').hidden = true;
+		}
+
+		function ukkAskMoreYes() {
+			document.getElementById('ukkUploadForm').reset();
+			document.getElementById('ukkUploadPatientId').value = ukkCurrentPatientId;
+			document.getElementById('ukkUploadStatus').innerHTML = '';
+			document.getElementById('ukkUploadFormBody').hidden = false;
+			document.getElementById('ukkUploadAskMore').hidden = true;
+		}
+
+		function ukkAskMoreNo() {
+			ukkCloseUpload();
+			window.location.href = '/dokument/verarbeitung/' + encodeURIComponent(ukkUploadTaskIds.join(',')) + '/';
+		}
+
+		document.getElementById('ukkUploadBackdrop').addEventListener('click', function (event) {
+			if (event.target === this) {
+				ukkCloseUpload();
+			}
+		});
+
+		document.getElementById('ukkUploadForm').addEventListener('submit', function (event) {
+			event.preventDefault();
+			const statusEl = document.getElementById('ukkUploadStatus');
+			const submitBtn = document.getElementById('ukkUploadSubmit');
+			const formData = new FormData(this);
+
+			submitBtn.disabled = true;
+			statusEl.innerHTML = '<div class="text-muted">Wird hochgeladen...</div>';
+
+			fetch('{% url "post_document" %}', {
+				method: 'POST',
+				body: formData,
+				credentials: 'same-origin',
+			})
+				.then(function (response) {
+					if (!response.ok) {
+						return response.text().then(function (text) {
+							throw new Error(text || ('HTTP ' + response.status));
+						});
+					}
+					return response.json();
+				})
+				.then(function (taskId) {
+					ukkUploadTaskIds.push(taskId);
+					document.getElementById('ukkUploadFormBody').hidden = true;
+					document.getElementById('ukkUploadAskMore').hidden = false;
+				})
+				.catch(function (error) {
+					statusEl.innerHTML = '<div class="text-danger">Fehler beim Hochladen: ' + error.message + '</div>';
+				})
+				.finally(function () {
+					submitBtn.disabled = false;
+				});
+		});
+	</script>
 </body>
 </html>

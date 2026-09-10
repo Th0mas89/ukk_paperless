@@ -64,6 +64,7 @@ from documents.models import DocumentType
 from documents.models import MatchingModel
 from documents.models import Note
 from documents.models import PaperlessTask
+from documents.models import Patient
 from documents.models import SavedView
 from documents.models import SavedViewFilterRule
 from documents.models import ShareLink
@@ -2280,6 +2281,14 @@ class PostDocumentSerializer(serializers.Serializer[dict[str, Any]]):
         required=False,
     )
 
+    patient = serializers.PrimaryKeyRelatedField(
+        queryset=Patient.objects.all(),
+        label="Patient",
+        allow_null=True,
+        write_only=True,
+        required=False,
+    )
+
     archive_serial_number = serializers.IntegerField(
         label="ASN",
         write_only=True,
@@ -2336,6 +2345,12 @@ class PostDocumentSerializer(serializers.Serializer[dict[str, Any]]):
     def validate_storage_path(self, storage_path):
         if storage_path:
             return storage_path.id
+        else:
+            return None
+
+    def validate_patient(self, patient):
+        if patient:
+            return patient.id
         else:
             return None
 

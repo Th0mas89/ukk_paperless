@@ -22,6 +22,7 @@ from documents.views import ChatStreamingView
 from documents.views import CorrespondentViewSet
 from documents.views import CustomFieldViewSet
 from documents.views import DeleteDocumentsView
+from documents.views import DocumentProcessingView
 from documents.views import DocumentTypeViewSet
 from documents.views import EditPdfDocumentsView
 from documents.views import GlobalSearchView
@@ -297,6 +298,11 @@ urlpatterns = [
     ),
     re_path(r"^share/(?P<slug>\w+)/?$", SharedLinkView.as_view()),
     re_path(r"^favicon.ico$", FaviconView.as_view(), name="favicon"),
+    re_path(
+        r"^dokument/verarbeitung/(?P<task_ids>[0-9a-fA-F,-]+)/$",
+        login_required(DocumentProcessingView.as_view()),
+        name="document_processing",
+    ),
     re_path(r"admin/", admin.site.urls),
     re_path(
         r"^fetch/",

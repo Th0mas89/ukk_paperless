@@ -149,6 +149,7 @@ from documents.matching import match_correspondents
 from documents.matching import match_document_types
 from documents.matching import match_storage_paths
 from documents.matching import match_tags
+from documents.models import Case as MedicalCase
 from documents.models import Correspondent
 from documents.models import CustomField
 from documents.models import CustomFieldInstance
@@ -156,6 +157,7 @@ from documents.models import Document
 from documents.models import DocumentType
 from documents.models import Note
 from documents.models import PaperlessTask
+from documents.models import Patient
 from documents.models import SavedView
 from documents.models import ShareLink
 from documents.models import ShareLinkBundle
@@ -362,7 +364,34 @@ class IndexView(TemplateView):
         context = super().get_context_data(**kwargs)
         context["cookie_prefix"] = settings.COOKIE_PREFIX
         context["username"] = self.request.user.username
-        context["full_name"] = self.request.user.get_full_name()
+        context["full_name"] = self.request.user.get_full_name() or self.request.user.username
+
+        # Get OE from user groups or query parameter
+        user_groups = list(self.request.user.groups.values_list("name", flat=True))
+        selected_oe = self.request.GET.get("oe")
+
+        if selected_oe:
+            active_oes = [selected_oe]
+        elif user_groups:
+            active_oes = user_groups
+        else:
+            active_oes = []
+
+        if active_oes:
+            cases = MedicalCase.objects.filter(organizational_unit__in=active_oes)
+            patients = (
+                Patient.objects.filter(cases__in=cases)
+                .distinct()
+                .prefetch_related("cases")
+                .annotate(document_count=Count("documents", distinct=True))
+            )
+        else:
+            patients = Patient.objects.none()
+
+        context["current_oe"] = ", ".join(active_oes) if active_oes else None
+        context["user_groups"] = user_groups
+        context["patients"] = patients
+
         context["styles_css"] = f"frontend/{self.get_frontend_language()}/styles.css"
         context["polyfills_js"] = (
             f"frontend/{self.get_frontend_language()}/polyfills.js"
@@ -374,6 +403,17 @@ class IndexView(TemplateView):
         context["apple_touch_icon"] = (
             f"frontend/{self.get_frontend_language()}/apple-touch-icon.png"
         )
+        return context
+
+
+class DocumentProcessingView(TemplateView):
+    template_name = "document_processing.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["username"] = self.request.user.username
+        context["full_name"] = self.request.user.get_full_name() or self.request.user.username
+        context["task_ids"] = kwargs["task_ids"].split(",")
         return context
 
 
@@ -3355,6 +3395,7 @@ class PostDocumentView(GenericAPIView[Any]):
         correspondent_id = serializer.validated_data.get("correspondent")
         document_type_id = serializer.validated_data.get("document_type")
         storage_path_id = serializer.validated_data.get("storage_path")
+        patient_id = serializer.validated_data.get("patient")
         tag_ids = serializer.validated_data.get("tags")
         title = serializer.validated_data.get("title")
         created = serializer.validated_data.get("created")
@@ -3389,6 +3430,7 @@ class PostDocumentView(GenericAPIView[Any]):
             correspondent_id=correspondent_id,
             document_type_id=document_type_id,
             storage_path_id=storage_path_id,
+            patient_id=patient_id,
             tag_ids=tag_ids,
             created=created,
             asn=archive_serial_number,

@@ -1,0 +1,175 @@
+<!doctype html>
+
+{% load static %}
+
+<html lang="de" data-bs-theme="auto">
+<head>
+	<meta charset="utf-8">
+	<title>UKK Paperless - Dokumentenverarbeitung</title>
+	<base href="{% url 'base' %}">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex,nofollow">
+	<link rel="icon" type="image/x-icon" href="favicon.ico">
+	<link rel="stylesheet" href="{% static 'bootstrap.min.css' %}">
+	<style>
+		body {
+			background-color: #f8f9fa;
+			min-height: 100vh;
+		}
+		.navbar-ukk {
+			background-color: #004b87;
+		}
+		.card-header-ukk {
+			background-color: #e9ecef;
+			font-weight: 600;
+		}
+		.doc-card {
+			box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+		}
+	</style>
+</head>
+<body>
+	<nav class="navbar navbar-dark navbar-ukk mb-4">
+		<div class="container-fluid">
+			<span class="navbar-brand mb-0 h1 d-flex align-items-center">
+				{% include "paperless-ngx/snippets/svg_leaf.html" with extra_attrs="width='24' class='me-2 fill-white'" %}
+				UKK Paperless &ndash; Dokumentenverarbeitung
+			</span>
+			<div class="d-flex align-items-center text-white">
+				<span class="me-3">
+					<strong>Angemeldet:</strong> {{ full_name }} ({{ username }})
+				</span>
+				<a href="{% url 'base' %}" class="btn btn-outline-light btn-sm">Zur Stationsübersicht</a>
+			</div>
+		</div>
+	</nav>
+
+	<div class="container mb-5">
+		<div class="row">
+			<div class="col-12 col-lg-8 offset-lg-2">
+
+				{% if not task_ids %}
+					<div class="alert alert-warning" role="alert">Keine Dokumente zur Anzeige.</div>
+				{% endif %}
+
+				{% for task_id in task_ids %}
+					<div class="card doc-card mb-3 ukk-doc-card" data-task-id="{{ task_id }}">
+						<div class="card-header card-header-ukk">Dokument {{ forloop.counter }} von {{ task_ids|length }}</div>
+						<div class="card-body">
+
+							<div class="ukk-status-pending">
+								<div class="d-flex align-items-center gap-2 text-muted">
+									<div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+									<span>Text wird extrahiert &hellip;</span>
+								</div>
+							</div>
+
+							<div class="ukk-status-failure" hidden>
+								<div class="alert alert-danger mb-0" role="alert">
+									<strong>Verarbeitung fehlgeschlagen.</strong>
+									<div class="ukk-failure-reason mt-1"></div>
+								</div>
+							</div>
+
+							<div class="ukk-status-success" hidden>
+								<label class="form-label">Erkannter Text</label>
+								<textarea class="ukk-content form-control mb-3" rows="12" readonly></textarea>
+								<div class="d-flex gap-2">
+									<button type="button" class="btn btn-outline-primary ukk-copy-btn">
+										Text kopieren
+									</button>
+									<button type="button" class="btn btn-primary ukk-kis-btn">
+										An KIS senden
+									</button>
+								</div>
+							</div>
+
+						</div>
+					</div>
+				{% endfor %}
+
+			</div>
+		</div>
+	</div>
+
+	<script type="text/javascript">
+		function ukkSetState(card, state) {
+			card.querySelector('.ukk-status-pending').hidden = state !== 'pending';
+			card.querySelector('.ukk-status-failure').hidden = state !== 'failure';
+			card.querySelector('.ukk-status-success').hidden = state !== 'success';
+		}
+
+		function ukkInitCard(card) {
+			var taskId = card.dataset.taskId;
+			var contentValue = '';
+			var pollTimer = null;
+
+			var copyBtn = card.querySelector('.ukk-copy-btn');
+			var kisBtn = card.querySelector('.ukk-kis-btn');
+			var textarea = card.querySelector('.ukk-content');
+
+			copyBtn.addEventListener('click', function () {
+				navigator.clipboard.writeText(contentValue).then(function () {
+					var original = copyBtn.textContent;
+					copyBtn.textContent = 'Kopiert!';
+					setTimeout(function () {
+						copyBtn.textContent = original;
+					}, 2000);
+				});
+			});
+
+			kisBtn.addEventListener('click', function () {
+				// Mockup: reale KIS-Anbindung folgt separat als Postprocessing-Schritt.
+				kisBtn.disabled = true;
+				kisBtn.textContent = '✓ An KIS gesendet (Mockup)';
+			});
+
+			function fetchDocumentContent(documentId) {
+				fetch('/api/documents/' + documentId + '/', {credentials: 'same-origin'})
+					.then(function (response) { return response.json(); })
+					.then(function (doc) {
+						contentValue = doc.content || '';
+						textarea.value = contentValue;
+						ukkSetState(card, 'success');
+					});
+			}
+
+			function pollTask() {
+				fetch('/api/tasks/?task_id=' + encodeURIComponent(taskId), {credentials: 'same-origin'})
+					.then(function (response) { return response.json(); })
+					.then(function (data) {
+						var results = data.results || data;
+						var task = results && results[0];
+						if (!task) {
+							return;
+						}
+						if (task.status === 'pending' || task.status === 'started') {
+							ukkSetState(card, 'pending');
+							return;
+						}
+						clearInterval(pollTimer);
+						if (task.status === 'success') {
+							var docId = task.related_document_ids && task.related_document_ids[0];
+							if (docId) {
+								fetchDocumentContent(docId);
+							} else {
+								card.querySelector('.ukk-failure-reason').textContent = 'Kein Dokument aus dieser Verarbeitung hervorgegangen.';
+								ukkSetState(card, 'failure');
+							}
+						} else {
+							var reason = task.result_data && task.result_data.error_message;
+							card.querySelector('.ukk-failure-reason').textContent = reason || '';
+							ukkSetState(card, 'failure');
+						}
+					});
+			}
+
+			ukkSetState(card, 'pending');
+			pollTask();
+			pollTimer = setInterval(pollTask, 2000);
+		}
+
+		document.querySelectorAll('.ukk-doc-card').forEach(ukkInitCard);
+	</script>
+</body>
+</html>

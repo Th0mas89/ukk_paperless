@@ -23,6 +23,7 @@ class DocumentMetadataOverrides:
     document_type_id: int | None = None
     tag_ids: list[int] | None = None
     storage_path_id: int | None = None
+    patient_id: int | None = None
     created: datetime.date | None = None
     asn: int | None = None
     owner_id: int | None = None
@@ -52,6 +53,8 @@ class DocumentMetadataOverrides:
             self.document_type_id = other.document_type_id
         if other.storage_path_id is not None:
             self.storage_path_id = other.storage_path_id
+        if other.patient_id is not None:
+            self.patient_id = other.patient_id
         if other.owner_id is not None:
             self.owner_id = other.owner_id
         if other.actor_id is not None:
@@ -111,6 +114,7 @@ class DocumentMetadataOverrides:
         overrides.correspondent_id = doc.correspondent.id if doc.correspondent else None
         overrides.document_type_id = doc.document_type.id if doc.document_type else None
         overrides.storage_path_id = doc.storage_path.id if doc.storage_path else None
+        overrides.patient_id = doc.patient.id if doc.patient else None
         overrides.owner_id = doc.owner.id if doc.owner else None
         overrides.tag_ids = list(doc.tags.values_list("id", flat=True))
         overrides.created = doc.created

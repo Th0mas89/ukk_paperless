@@ -32,6 +32,7 @@ from documents.models import CustomField
 from documents.models import CustomFieldInstance
 from documents.models import Document
 from documents.models import DocumentType
+from documents.models import Patient
 from documents.models import StoragePath
 from documents.models import Tag
 from documents.models import WorkflowTrigger
@@ -916,6 +917,11 @@ class ConsumerPlugin(
         if self.metadata.storage_path_id:
             document.storage_path = StoragePath.objects.get(
                 pk=self.metadata.storage_path_id,
+            )
+
+        if self.metadata.patient_id:
+            document.patient = Patient.objects.get(
+                pk=self.metadata.patient_id,
             )
 
         if self.metadata.asn is not None:

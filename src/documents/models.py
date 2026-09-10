@@ -176,6 +176,15 @@ class Document(SoftDeleteModel, ModelWithOwner):  # type: ignore[django-manager-
         verbose_name=_("storage path"),
     )
 
+    patient = models.ForeignKey(
+        "documents.Patient",
+        blank=True,
+        null=True,
+        related_name="documents",
+        on_delete=models.SET_NULL,
+        verbose_name=_("Patient"),
+    )
+
     title = models.CharField(_("title"), max_length=128, blank=True, db_index=True)
 
     document_type = models.ForeignKey(
@@ -2033,3 +2042,57 @@ class WorkflowRun(SoftDeleteModel):
 
     def __str__(self) -> str:
         return f"WorkflowRun of {self.workflow} at {self.run_at} on {self.document}"
+
+
+class Patient(models.Model):
+    pid = models.CharField(
+        _("Patienten-ID (PID)"),
+        max_length=64,
+        unique=True,
+        db_index=True,
+        help_text=_("Eindeutige Patienten-Identifikationsnummer"),
+    )
+    first_name = models.CharField(_("Vorname"), max_length=128)
+    last_name = models.CharField(_("Nachname"), max_length=128)
+    date_of_birth = models.DateField(_("Geburtsdatum"))
+
+    class Meta:
+        verbose_name = _("Patient")
+        verbose_name_plural = _("Patienten")
+        ordering = ("last_name", "first_name")
+
+    def __str__(self):
+        return f"{self.last_name}, {self.first_name} ({self.pid})"
+
+
+class Case(models.Model):
+    case_number = models.CharField(
+        _("Fallnummer"),
+        max_length=64,
+        unique=True,
+        db_index=True,
+        help_text=_("Eindeutige Fallnummer"),
+    )
+    patient = models.ForeignKey(
+        Patient,
+        to_field="pid",
+        on_delete=models.CASCADE,
+        related_name="cases",
+        verbose_name=_("Patient (PID)"),
+    )
+    case_start = models.DateTimeField(_("Fallstart"))
+    case_end = models.DateTimeField(_("Fallende"), null=True, blank=True)
+    organizational_unit = models.CharField(
+        _("Organisationseinheit"),
+        max_length=128,
+        blank=True,
+    )
+
+    class Meta:
+        verbose_name = _("Fall")
+        verbose_name_plural = _("Fälle")
+        ordering = ("-case_start",)
+
+    def __str__(self):
+        return f"Fall {self.case_number} (PID: {self.patient_id})"
+
