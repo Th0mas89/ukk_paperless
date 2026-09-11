@@ -1,3 +1,5 @@
+docker compose -f docker/compose/docker-compose.sqlite-tika.yml down -v
+
 docker compose -f docker/compose/docker-compose.sqlite-tika.yml up -d --build --force-recreate 
 
 docker compose exec webserver python manage.py seed_patients --oe "Station A" "Station B" --count 5

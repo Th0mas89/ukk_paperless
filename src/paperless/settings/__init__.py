@@ -1229,6 +1229,18 @@ REMOTE_OCR_ALLOW_INTERNAL_ENDPOINTS = get_bool_from_env(
     "true",
 )
 
+###############################################################################
+# GLM-OCR (local vision LLM OCR via Ollama)                                   #
+###############################################################################
+GLM_OCR_ENABLED = get_bool_from_env("PAPERLESS_GLM_OCR_ENABLED", "NO")
+GLM_OCR_ENDPOINT = os.getenv("PAPERLESS_GLM_OCR_ENDPOINT", "http://localhost:11434")
+GLM_OCR_MODEL = os.getenv("PAPERLESS_GLM_OCR_MODEL", "glm-4v")
+GLM_OCR_REQUEST_TIMEOUT = get_int_from_env("PAPERLESS_GLM_OCR_REQUEST_TIMEOUT", 120)
+GLM_OCR_ALLOW_INTERNAL_ENDPOINTS = get_bool_from_env(
+    "PAPERLESS_GLM_OCR_ALLOW_INTERNAL_ENDPOINTS",
+    "true",
+)
+
 ################################################################################
 # AI Settings                                                                  #
 ################################################################################
