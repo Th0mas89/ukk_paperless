@@ -31,6 +31,7 @@ from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.core.cache import cache
 from django.db import connections
+from django.db import transaction
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import Avg
@@ -110,6 +111,7 @@ from documents import bulk_edit
 from documents.bulk_download import ArchiveOnlyStrategy
 from documents.bulk_download import OriginalAndArchiveStrategy
 from documents.bulk_download import OriginalsOnlyStrategy
+from documents.caching import clear_document_caches
 from documents.caching import get_llm_suggestion_cache
 from documents.caching import get_metadata_cache
 from documents.caching import get_suggestion_cache
@@ -203,7 +205,8 @@ from documents.serialisers import EmailSerializer
 from documents.serialisers import MergeDocumentsAsVersionsSerializer
 from documents.serialisers import MergeDocumentsSerializer
 from documents.serialisers import NotesSerializer
-from documents.serialisers import PolishDocumentContentSerializer
+from documents.serialisers import GlmOcrUploadSerializer
+from documents.serialisers import UseGlmOcrContentSerializer
 from documents.serialisers import PostDocumentSerializer
 from documents.serialisers import RemovePasswordDocumentsSerializer
 from documents.serialisers import ReprocessDocumentsSerializer
@@ -230,6 +233,7 @@ from documents.tasks import build_share_link_bundle
 from documents.tasks import consume_file
 from documents.tasks import empty_trash
 from documents.tasks import llmindex_index
+from documents.tasks import run_glm_ocr_comparison
 from documents.tasks import sanity_check
 from documents.tasks import train_classifier
 from documents.tasks import update_document_parent_tags
@@ -247,6 +251,7 @@ from paperless.config import AIConfig
 from paperless.config import GeneralConfig
 from paperless.config import RemoteOCRConfig
 from paperless.models import ApplicationConfiguration
+from paperless.parsers.glm_ocr import GlmOcrConfig
 from paperless.parsers.registry import get_parser_registry
 from paperless.parsers.remote import RemoteEngineConfig
 from paperless.serialisers import GroupSerializer
@@ -414,7 +419,16 @@ class DocumentProcessingView(TemplateView):
         context = super().get_context_data(**kwargs)
         context["username"] = self.request.user.username
         context["full_name"] = self.request.user.get_full_name() or self.request.user.username
-        context["task_ids"] = kwargs["task_ids"].split(",")
+        task_ids = kwargs["task_ids"].split(",")
+        glm_raw = self.request.GET.get("glm", "")
+        glm_task_ids = glm_raw.split(",") if glm_raw else []
+        context["documents"] = [
+            {
+                "task_id": task_id,
+                "glm_task_id": glm_task_ids[i] if i < len(glm_task_ids) else "",
+            }
+            for i, task_id in enumerate(task_ids)
+        ]
         return context
 
 
@@ -1744,6 +1758,35 @@ class DocumentViewSet(
         }
 
         return Response(resp_data)
+
+    @action(methods=["post"], detail=True, url_path="use_glm_ocr_content")
+    def use_glm_ocr_content(self, request, pk=None):
+        doc = get_object_or_404(Document, pk=pk)
+        if not has_perms_owner_aware(request.user, "change_document", doc):
+            return HttpResponseForbidden("Insufficient permissions")
+
+        serializer = UseGlmOcrContentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_content = serializer.validated_data["content"]
+
+        with transaction.atomic():
+            old_content = doc.content
+            Document.objects.filter(pk=doc.pk).update(content=new_content)
+            tag, _ = Tag.objects.get_or_create(name="GLM-OCR")
+            doc.tags.add(tag)
+            if settings.AUDIT_LOG_ENABLED:
+                LogEntry.objects.log_create(
+                    instance=doc,
+                    changes={"content": [old_content, new_content]},
+                    additional_data={"reason": "GLM-OCR-Version übernommen"},
+                    action=LogEntry.Action.UPDATE,
+                )
+
+        from documents.search import get_backend
+
+        get_backend().add_or_update(doc)
+        clear_document_caches(doc.pk)
+        return Response({"status": "ok"})
 
     @action(methods=["get"], detail=True, filter_backends=[])
     @method_decorator(cache_control(no_cache=True))
@@ -3314,21 +3357,6 @@ class ReprocessDocumentsView(DocumentOperationPermissionMixin):
         )
 
 
-class PolishDocumentContentView(DocumentOperationPermissionMixin):
-    serializer_class = PolishDocumentContentSerializer
-
-    def post(self, request, *args, **kwargs):
-        if not AIConfig().ai_enabled:
-            return HttpResponseBadRequest("AI is required for this feature")
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return self._execute_document_action(
-            method=bulk_edit.polish_content,
-            validated_data=serializer.validated_data,
-            operation_label="document content polish",
-        )
-
-
 @extend_schema_view(
     post=extend_schema(
         operation_id="documents_edit_pdf",
@@ -3463,6 +3491,43 @@ class PostDocumentView(GenericAPIView[Any]):
                     else PaperlessTask.TriggerSource.API_UPLOAD
                 ),
             },
+        )
+
+        return Response(async_task.id)
+
+
+class GlmOcrUploadView(GenericAPIView[Any]):
+    """
+    Accepts the same uploaded file as PostDocumentView and dispatches a
+    GLM-OCR comparison task for it, independent of and in parallel with
+    the normal Tesseract-based consumption of the same upload -- no
+    Document row is created or required for this.
+    """
+
+    permission_classes = (IsAuthenticated,)
+    serializer_class = GlmOcrUploadSerializer
+    parser_classes = (parsers.MultiPartParser,)
+
+    def post(self, request, *args, **kwargs):
+        if not GlmOcrConfig().is_valid():
+            return HttpResponseBadRequest("GLM-OCR is not configured")
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        doc_name, doc_data = serializer.validated_data.get("document")
+        doc_name = normalize("NFC", doc_name)
+
+        settings.SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+        temp_file_path = Path(tempfile.mkdtemp(dir=settings.SCRATCH_DIR)) / Path(
+            pathvalidate.sanitize_filename(doc_name),
+        )
+        temp_file_path.write_bytes(doc_data)
+        mime_type = magic.from_file(temp_file_path, mime=True)
+
+        async_task = run_glm_ocr_comparison.apply_async(
+            kwargs={"temp_file_path": str(temp_file_path), "mime_type": mime_type},
+            headers={"trigger_source": PaperlessTask.TriggerSource.WEB_UI},
         )
 
         return Response(async_task.id)

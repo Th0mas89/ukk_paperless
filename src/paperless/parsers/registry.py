@@ -197,7 +197,6 @@ class ParserRegistry:
         that log output is predictable; scoring determines which parser wins
         at runtime regardless of registration order.
         """
-        from paperless.parsers.glm_ocr import GlmOcrDocumentParser
         from paperless.parsers.mail import MailDocumentParser
         from paperless.parsers.remote import RemoteDocumentParser
         from paperless.parsers.tesseract import RasterisedDocumentParser
@@ -209,7 +208,6 @@ class ParserRegistry:
         self.register_builtin(TikaDocumentParser)
         self.register_builtin(MailDocumentParser)
         self.register_builtin(RasterisedDocumentParser)
-        self.register_builtin(GlmOcrDocumentParser)
 
     # ------------------------------------------------------------------
     # Discovery

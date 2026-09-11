@@ -6,6 +6,7 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 from tempfile import mkstemp
 
 from celery import Task
@@ -756,62 +757,41 @@ def apply_ai_suggestions(self, action_id: int, document_id: int) -> None:
         update_document_in_llm_index.apply_async(kwargs={"document": document})
 
 
-@shared_task(
-    bind=True,
-    autoretry_for=(LLMTimeoutError,),
-    max_retries=3,
-    retry_backoff=60,
-    retry_backoff_max=600,
-    retry_jitter=True,
-)
-def polish_document_content(self, document_id: int) -> None:
+@shared_task(bind=True)
+def run_glm_ocr_comparison(self, temp_file_path: str, mime_type: str) -> dict:
     """
-    Runs a document's OCR text through the configured LLM to fix recognition
-    errors, overwriting Document.content with the result.
-    """
-    from paperless_ai.ocr_cleanup import get_ai_ocr_cleanup
+    Runs GLM-OCR (a local vision LLM served by Ollama) against an uploaded
+    file and returns the extracted text -- independent of, and in parallel
+    with, the normal Tesseract-based consumption of the same upload.
 
+    Does NOT touch any Document row (none may exist yet, and none is
+    required). The UKK document-processing UI shows this result next to
+    the Tesseract text for the doctor to compare; only an explicit "use
+    this version" action (DocumentViewSet.use_glm_ocr_content) persists it.
+    Returning a dict here makes it land in the PaperlessTask's result_data
+    via task_postrun_handler, so the frontend can read it back by polling
+    the task. No autoretry: a misconfigured model name (404) should not be
+    retried.
+    """
+    from paperless.parsers.glm_ocr import GlmOcrConfig
+    from paperless.parsers.glm_ocr import run_glm_ocr
+
+    if not GlmOcrConfig().is_valid():
+        logger.warning("GLM-OCR is not configured, cannot run comparison")
+        return {}
+
+    path = Path(temp_file_path)
+    settings.SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+    tempdir = Path(
+        mkdtemp(prefix="paperless-glm-ocr-", dir=settings.SCRATCH_DIR),
+    )
     try:
-        document = Document.objects.get(pk=document_id)
-    except Document.DoesNotExist:
-        logger.warning(
-            "Document %d no longer exists, not polishing content",
-            document_id,
-        )
-        return
+        text = run_glm_ocr(path, mime_type, tempdir)
+    finally:
+        shutil.rmtree(tempdir, ignore_errors=True)
+        shutil.rmtree(path.parent, ignore_errors=True)
 
-    ai_config = AIConfig()
-    if not ai_config.ai_enabled:
-        logger.warning(
-            "AI is not enabled, not polishing content for document %d",
-            document_id,
-        )
-        return
-
-    new_content = get_ai_ocr_cleanup(document)
-
-    with transaction.atomic():
-        old_document = Document.objects.get(pk=document.pk)
-        Document.objects.filter(pk=document.pk).update(content=new_content)
-
-        if settings.AUDIT_LOG_ENABLED:
-            LogEntry.objects.log_create(
-                instance=old_document,
-                changes={"content": [old_document.content, new_content]},
-                additional_data={"reason": "AI OCR text cleanup (Ollama)"},
-                action=LogEntry.Action.UPDATE,
-            )
-
-    document.refresh_from_db()
-
-    from documents.search import get_backend
-
-    get_backend().add_or_update(document)
-
-    if ai_config.llm_index_enabled:
-        llm_index_add_or_update_document(document)
-
-    clear_document_caches(document.pk)
+    return {"glm_ocr_text": text}
 
 
 @shared_task

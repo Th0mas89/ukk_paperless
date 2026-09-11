@@ -26,6 +26,12 @@
 		.doc-card {
 			box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
 		}
+		.ukk-column {
+			border: 1px solid #e9ecef;
+			border-radius: 0.375rem;
+			padding: 0.75rem;
+			height: 100%;
+		}
 	</style>
 </head>
 <body>
@@ -46,48 +52,76 @@
 
 	<div class="container mb-5">
 		<div class="row">
-			<div class="col-12 col-lg-8 offset-lg-2">
+			<div class="col-12 col-lg-10 offset-lg-1">
 
-				{% if not task_ids %}
+				{% if not documents %}
 					<div class="alert alert-warning" role="alert">Keine Dokumente zur Anzeige.</div>
 				{% endif %}
 
-				{% for task_id in task_ids %}
-					<div class="card doc-card mb-3 ukk-doc-card" data-task-id="{{ task_id }}">
-						<div class="card-header card-header-ukk">Dokument {{ forloop.counter }} von {{ task_ids|length }}</div>
+				{% for doc in documents %}
+					<div class="card doc-card mb-3 ukk-doc-card" data-task-id="{{ doc.task_id }}" data-glm-task-id="{{ doc.glm_task_id }}">
+						<div class="card-header card-header-ukk">Dokument {{ forloop.counter }} von {{ documents|length }}</div>
 						<div class="card-body">
+							<div class="row g-3">
 
-							<div class="ukk-status-pending">
-								<div class="d-flex align-items-center gap-2 text-muted">
-									<div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
-									<span>Text wird extrahiert &hellip;</span>
+								<div class="col-12 col-md-6 ukk-column">
+									<h6 class="text-muted mb-2">OCR-Version (Tesseract)</h6>
+
+									<div class="ukk-status-pending">
+										<div class="d-flex align-items-center gap-2 text-muted">
+											<div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+											<span>Text wird extrahiert &hellip;</span>
+										</div>
+									</div>
+
+									<div class="ukk-status-failure" hidden>
+										<div class="alert alert-danger mb-0" role="alert">
+											<strong>Verarbeitung fehlgeschlagen.</strong>
+											<div class="ukk-failure-reason mt-1"></div>
+										</div>
+									</div>
+
+									<div class="ukk-status-success" hidden>
+										<textarea class="ukk-content form-control mb-2" rows="14" readonly></textarea>
+										<div class="d-flex gap-2 flex-wrap">
+											<button type="button" class="btn btn-outline-primary btn-sm ukk-copy-btn">Text kopieren</button>
+											<button type="button" class="btn btn-primary btn-sm ukk-kis-btn">An KIS senden</button>
+										</div>
+									</div>
 								</div>
-							</div>
 
-							<div class="ukk-status-failure" hidden>
-								<div class="alert alert-danger mb-0" role="alert">
-									<strong>Verarbeitung fehlgeschlagen.</strong>
-									<div class="ukk-failure-reason mt-1"></div>
+								<div class="col-12 col-md-6 ukk-column">
+									<h6 class="text-muted mb-2">GLM-OCR-Version</h6>
+
+									{% if doc.glm_task_id %}
+										<div class="ukk-status-pending">
+											<div class="d-flex align-items-center gap-2 text-muted">
+												<div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+												<span>Text wird extrahiert &hellip;</span>
+											</div>
+										</div>
+
+										<div class="ukk-status-failure" hidden>
+											<div class="alert alert-danger mb-0" role="alert">
+												<strong>Verarbeitung fehlgeschlagen.</strong>
+												<div class="ukk-failure-reason mt-1"></div>
+											</div>
+										</div>
+
+										<div class="ukk-status-success" hidden>
+											<textarea class="ukk-content form-control mb-2" rows="14" readonly></textarea>
+											<div class="d-flex gap-2 flex-wrap">
+												<button type="button" class="btn btn-outline-primary btn-sm ukk-copy-btn">Text kopieren</button>
+												<button type="button" class="btn btn-primary btn-sm ukk-kis-btn">An KIS senden</button>
+											</div>
+											<div class="ukk-use-error text-danger small mt-2" hidden></div>
+										</div>
+									{% else %}
+										<div class="alert alert-secondary small mb-0">GLM-OCR nicht verfügbar.</div>
+									{% endif %}
 								</div>
-							</div>
 
-							<div class="ukk-status-success" hidden>
-								<label class="form-label">Erkannter Text</label>
-								<textarea class="ukk-content form-control mb-3" rows="12" readonly></textarea>
-								<div class="d-flex gap-2 flex-wrap">
-									<button type="button" class="btn btn-outline-primary ukk-copy-btn">
-										Text kopieren
-									</button>
-									<button type="button" class="btn btn-outline-secondary ukk-polish-btn">
-										Text glätten (KI)
-									</button>
-									<button type="button" class="btn btn-primary ukk-kis-btn">
-										An KIS senden
-									</button>
-								</div>
-								<div class="ukk-polish-error text-danger small mt-2" hidden></div>
 							</div>
-
 						</div>
 					</div>
 				{% endfor %}
@@ -97,10 +131,10 @@
 	</div>
 
 	<script type="text/javascript">
-		function ukkSetState(card, state) {
-			card.querySelector('.ukk-status-pending').hidden = state !== 'pending';
-			card.querySelector('.ukk-status-failure').hidden = state !== 'failure';
-			card.querySelector('.ukk-status-success').hidden = state !== 'success';
+		function ukkSetState(container, state) {
+			container.querySelector('.ukk-status-pending').hidden = state !== 'pending';
+			container.querySelector('.ukk-status-failure').hidden = state !== 'failure';
+			container.querySelector('.ukk-status-success').hidden = state !== 'success';
 		}
 
 		function ukkGetCookie(name) {
@@ -109,8 +143,7 @@
 		}
 
 		// Polls /api/tasks/ every 2s until the task reaches a terminal state,
-		// then calls onDone(task) once. Shared by the OCR wait and the
-		// "Text glätten"-Aktion below.
+		// then calls onDone(task) once.
 		function ukkPollUntilDone(taskId, onDone) {
 			var timer = null;
 			function check() {
@@ -133,32 +166,40 @@
 			timer = setInterval(check, 2000);
 		}
 
-		function ukkInitCard(card) {
-			var taskId = card.dataset.taskId;
-			var contentValue = '';
-
-			var copyBtn = card.querySelector('.ukk-copy-btn');
-			var kisBtn = card.querySelector('.ukk-kis-btn');
-			var polishBtn = card.querySelector('.ukk-polish-btn');
-			var polishError = card.querySelector('.ukk-polish-error');
-			var textarea = card.querySelector('.ukk-content');
-			var polishBtnDefaultLabel = polishBtn.textContent;
+		// Wires the "Text kopieren"/"An KIS senden" buttons in a column.
+		// contentValueGetter() returns the current text; onChosen (optional)
+		// runs additionally on either click, e.g. to persist the GLM-OCR
+		// column's text as the document's content.
+		function ukkWireCopyAndKis(column, contentValueGetter, onChosen) {
+			var copyBtn = column.querySelector('.ukk-copy-btn');
+			var kisBtn = column.querySelector('.ukk-kis-btn');
 
 			copyBtn.addEventListener('click', function () {
-				navigator.clipboard.writeText(contentValue).then(function () {
+				navigator.clipboard.writeText(contentValueGetter()).then(function () {
 					var original = copyBtn.textContent;
 					copyBtn.textContent = 'Kopiert!';
 					setTimeout(function () {
 						copyBtn.textContent = original;
 					}, 2000);
 				});
+				if (onChosen) {
+					onChosen();
+				}
 			});
 
 			kisBtn.addEventListener('click', function () {
 				// Mockup: reale KIS-Anbindung folgt separat als Postprocessing-Schritt.
 				kisBtn.disabled = true;
 				kisBtn.textContent = '✓ An KIS gesendet (Mockup)';
+				if (onChosen) {
+					onChosen();
+				}
 			});
+		}
+
+		function ukkInitTessColumn(card, column, taskId) {
+			var contentValue = '';
+			var textarea = column.querySelector('.ukk-content');
 
 			function fetchDocumentContent(documentId) {
 				fetch('/api/documents/' + documentId + '/', {credentials: 'same-origin'})
@@ -167,76 +208,84 @@
 						card.dataset.documentId = documentId;
 						contentValue = doc.content || '';
 						textarea.value = contentValue;
-						ukkSetState(card, 'success');
+						ukkSetState(column, 'success');
 					});
 			}
 
-			polishBtn.addEventListener('click', function () {
-				var documentId = card.dataset.documentId;
-				if (!documentId) {
-					return;
-				}
-				polishBtn.disabled = true;
-				polishBtn.textContent = 'Wird geglättet …';
-				polishError.hidden = true;
+			ukkWireCopyAndKis(column, function () { return contentValue; });
 
-				fetch('/api/documents/polish_content/', {
-					method: 'POST',
-					credentials: 'same-origin',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-CSRFToken': ukkGetCookie('csrftoken'),
-					},
-					body: JSON.stringify({documents: [parseInt(documentId, 10)]}),
-				})
-					.then(function (response) {
-						if (!response.ok) {
-							return response.text().then(function (text) {
-								throw new Error(text || ('HTTP ' + response.status));
-							});
-						}
-						return response.json();
-					})
-					.then(function (data) {
-						var polishTaskId = data.result && data.result[0];
-						if (!polishTaskId) {
-							throw new Error('Keine Task-ID erhalten.');
-						}
-						ukkPollUntilDone(polishTaskId, function (task) {
-							polishBtn.disabled = false;
-							polishBtn.textContent = polishBtnDefaultLabel;
-							if (task.status === 'success') {
-								fetchDocumentContent(documentId);
-							} else {
-								polishError.textContent = (task.result_data && task.result_data.error_message) || 'Unbekannter Fehler.';
-								polishError.hidden = false;
-							}
-						});
-					})
-					.catch(function (error) {
-						polishBtn.disabled = false;
-						polishBtn.textContent = polishBtnDefaultLabel;
-						polishError.textContent = error.message;
-						polishError.hidden = false;
-					});
-			});
-
-			ukkSetState(card, 'pending');
+			ukkSetState(column, 'pending');
 			ukkPollUntilDone(taskId, function (task) {
 				if (task.status === 'success') {
 					var docId = task.related_document_ids && task.related_document_ids[0];
 					if (docId) {
 						fetchDocumentContent(docId);
 					} else {
-						card.querySelector('.ukk-failure-reason').textContent = 'Kein Dokument aus dieser Verarbeitung hervorgegangen.';
-						ukkSetState(card, 'failure');
+						column.querySelector('.ukk-failure-reason').textContent = 'Kein Dokument aus dieser Verarbeitung hervorgegangen.';
+						ukkSetState(column, 'failure');
 					}
 				} else {
 					var reason = task.result_data && task.result_data.error_message;
-					card.querySelector('.ukk-failure-reason').textContent = reason || '';
-					ukkSetState(card, 'failure');
+					column.querySelector('.ukk-failure-reason').textContent = reason || '';
+					ukkSetState(column, 'failure');
 				}
 			});
+		}
+
+		function ukkInitGlmColumn(card, column, glmTaskId) {
+			if (!glmTaskId) {
+				return;
+			}
+			var contentValue = '';
+			var textarea = column.querySelector('.ukk-content');
+			var useError = column.querySelector('.ukk-use-error');
+
+			function persistChoice() {
+				var documentId = card.dataset.documentId;
+				if (!documentId) {
+					useError.textContent = 'Dokument wird noch angelegt, bitte kurz warten und erneut versuchen.';
+					useError.hidden = false;
+					return;
+				}
+				useError.hidden = true;
+				fetch('/api/documents/' + documentId + '/use_glm_ocr_content/', {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRFToken': ukkGetCookie('csrftoken'),
+					},
+					body: JSON.stringify({content: contentValue}),
+				}).then(function (response) {
+					if (!response.ok) {
+						throw new Error('HTTP ' + response.status);
+					}
+				}).catch(function () {
+					useError.textContent = 'Übernehmen fehlgeschlagen.';
+					useError.hidden = false;
+				});
+			}
+
+			ukkWireCopyAndKis(column, function () { return contentValue; }, persistChoice);
+
+			ukkSetState(column, 'pending');
+			ukkPollUntilDone(glmTaskId, function (task) {
+				if (task.status === 'success') {
+					contentValue = (task.result_data && task.result_data.glm_ocr_text) || '';
+					textarea.value = contentValue;
+					ukkSetState(column, 'success');
+				} else {
+					var reason = task.result_data && task.result_data.error_message;
+					column.querySelector('.ukk-failure-reason').textContent = reason || '';
+					ukkSetState(column, 'failure');
+				}
+			});
+		}
+
+		function ukkInitCard(card) {
+			var columns = card.querySelectorAll('.ukk-column');
+			ukkInitTessColumn(card, columns[0], card.dataset.taskId);
+			ukkInitGlmColumn(card, columns[1], card.dataset.glmTaskId);
 		}
 
 		document.querySelectorAll('.ukk-doc-card').forEach(ukkInitCard);

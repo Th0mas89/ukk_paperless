@@ -30,7 +30,7 @@ from documents.views import IndexView
 from documents.views import LogViewSet
 from documents.views import MergeDocumentsAsVersionsView
 from documents.views import MergeDocumentsView
-from documents.views import PolishDocumentContentView
+from documents.views import GlmOcrUploadView
 from documents.views import PostDocumentView
 from documents.views import RemoteVersionView
 from documents.views import RemovePasswordDocumentsView
@@ -151,6 +151,11 @@ urlpatterns = [
                                 name="post_document",
                             ),
                             re_path(
+                                "^glm_ocr_upload/",
+                                GlmOcrUploadView.as_view(),
+                                name="glm_ocr_upload",
+                            ),
+                            re_path(
                                 "^bulk_edit/",
                                 BulkEditView.as_view(),
                                 name="bulk_edit",
@@ -164,11 +169,6 @@ urlpatterns = [
                                 "^reprocess/",
                                 ReprocessDocumentsView.as_view(),
                                 name="reprocess_documents",
-                            ),
-                            re_path(
-                                "^polish_content/",
-                                PolishDocumentContentView.as_view(),
-                                name="polish_document_content",
                             ),
                             re_path(
                                 "^rotate/",

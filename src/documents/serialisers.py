@@ -1814,8 +1814,21 @@ class ReprocessDocumentsSerializer(DocumentSelectionSerializer):
     remote_ocr = serializers.BooleanField(required=False, default=False)
 
 
-class PolishDocumentContentSerializer(DocumentSelectionSerializer):
-    pass
+class GlmOcrUploadSerializer(serializers.Serializer):
+    document = serializers.FileField(label="Document", write_only=True)
+
+    def validate_document(self, document):
+        document_data = document.file.read()
+        mime_type = magic.from_buffer(document_data, mime=True)
+        if not is_mime_type_supported(mime_type):
+            raise serializers.ValidationError(
+                _("File type %(type)s not supported") % {"type": mime_type},
+            )
+        return document.name, document_data
+
+
+class UseGlmOcrContentSerializer(serializers.Serializer):
+    content = serializers.CharField()
 
 
 class BulkEditSerializer(

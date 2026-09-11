@@ -227,10 +227,17 @@
 	<script type="text/javascript">
 		var ukkCurrentPatientId = null;
 		var ukkUploadTaskIds = [];
+		var ukkUploadGlmTaskIds = [];
+
+		function ukkGetCookie(name) {
+			var match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+			return match ? decodeURIComponent(match[2]) : '';
+		}
 
 		function ukkOpenUpload(patientId, patientLabel) {
 			ukkCurrentPatientId = patientId;
 			ukkUploadTaskIds = [];
+			ukkUploadGlmTaskIds = [];
 			document.getElementById('ukkUploadForm').reset();
 			document.getElementById('ukkUploadPatientId').value = patientId;
 			document.getElementById('ukkUploadPatientLabel').textContent = patientLabel;
@@ -255,7 +262,9 @@
 
 		function ukkAskMoreNo() {
 			ukkCloseUpload();
-			window.location.href = '/dokument/verarbeitung/' + encodeURIComponent(ukkUploadTaskIds.join(',')) + '/';
+			var url = '/dokument/verarbeitung/' + encodeURIComponent(ukkUploadTaskIds.join(',')) + '/';
+			url += '?glm=' + encodeURIComponent(ukkUploadGlmTaskIds.join(','));
+			window.location.href = url;
 		}
 
 		document.getElementById('ukkUploadBackdrop').addEventListener('click', function (event) {
@@ -269,25 +278,42 @@
 			const statusEl = document.getElementById('ukkUploadStatus');
 			const submitBtn = document.getElementById('ukkUploadSubmit');
 			const formData = new FormData(this);
+			const fileInput = document.getElementById('ukkUploadFile');
 
 			submitBtn.disabled = true;
 			statusEl.innerHTML = '<div class="text-muted">Wird hochgeladen...</div>';
 
-			fetch('{% url "post_document" %}', {
+			const consumeUpload = fetch('{% url "post_document" %}', {
 				method: 'POST',
 				body: formData,
 				credentials: 'same-origin',
+			}).then(function (response) {
+				if (!response.ok) {
+					return response.text().then(function (text) {
+						throw new Error(text || ('HTTP ' + response.status));
+					});
+				}
+				return response.json();
+			});
+
+			// Parallel, best-effort: runs independently of the normal
+			// Tesseract-based consumption above, purely for comparison on
+			// the processing page. A failure here must not block the upload.
+			const glmFormData = new FormData();
+			glmFormData.append('document', fileInput.files[0]);
+			const glmUpload = fetch('{% url "glm_ocr_upload" %}', {
+				method: 'POST',
+				body: glmFormData,
+				credentials: 'same-origin',
+				headers: {'X-CSRFToken': ukkGetCookie('csrftoken')},
 			})
-				.then(function (response) {
-					if (!response.ok) {
-						return response.text().then(function (text) {
-							throw new Error(text || ('HTTP ' + response.status));
-						});
-					}
-					return response.json();
-				})
-				.then(function (taskId) {
-					ukkUploadTaskIds.push(taskId);
+				.then(function (response) { return response.ok ? response.json() : null; })
+				.catch(function () { return null; });
+
+			Promise.all([consumeUpload, glmUpload])
+				.then(function (results) {
+					ukkUploadTaskIds.push(results[0]);
+					ukkUploadGlmTaskIds.push(results[1] || '');
 					document.getElementById('ukkUploadFormBody').hidden = true;
 					document.getElementById('ukkUploadAskMore').hidden = false;
 				})
